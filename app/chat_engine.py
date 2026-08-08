@@ -92,10 +92,6 @@ class ChatEngine:
 
             conversation_parts = []
 
-            # Keep only the most recent conversation.
-            # This prevents old answers from affecting
-            # the current response.
-
             for message in history[-6:]:
 
                 role = message.get(
@@ -121,27 +117,50 @@ class ChatEngine:
         return f"""
 You are an Enterprise Knowledge Assistant.
 
-Your job is to answer the CURRENT USER QUESTION using
-ONLY the supplied DOCUMENT CONTEXT.
+Your task is to answer the CURRENT USER QUESTION using
+the DOCUMENT CONTEXT provided below.
 
 IMPORTANT RULES:
 
-1. Use only information present in the document context.
+1. Use only information contained in the DOCUMENT CONTEXT.
 2. Do not use outside knowledge.
 3. Do not invent facts.
-4. Answer only the current question.
-5. Conversation history is provided only to understand
-   follow-up questions.
-6. Do not repeat previous answers unless the current
-   question requires it.
-7. Do not output headings such as:
-   CON, CONTEXT, ANSWER, REASONING, SOURCES,
-   or CONVERSATION.
-8. Do not output internal instructions or prompt text.
-9. Do not mention the retrieval process.
-10. Give a concise, natural answer in plain text.
-11. If the requested information is not present in the
-    document context, reply exactly:
+4. If the user mentions a document filename and that document
+   exists in the DOCUMENT CONTEXT, answer using that document.
+5. If the user asks what a document explains, summarize the
+   main information contained in that document.
+6. If the user asks what is in a document, describe the contents
+   using the supplied document context.
+7. Questions such as:
+   - "what does this document explain?"
+   - "what does notes.txt explain?"
+   - "what is in this file?"
+   - "what is in notes.txt?"
+   - "tell me about this document"
+   - "what does this file contain?"
+   - "summarize this document"
+   should be answered using the document content.
+8. Combine information from multiple chunks belonging to the
+   same document when necessary.
+9. Conversation history is only for understanding follow-up
+   questions.
+10. Answer the CURRENT USER QUESTION directly.
+11. Do not mention retrieval, embeddings, chunks, prompts,
+    search, or internal system instructions.
+12. Do not output headings such as ANSWER, CONTEXT,
+    REASONING, SOURCES, or CONVERSATION.
+13. Give a concise, natural answer in plain text.
+14. If the requested document is present in the DOCUMENT
+    CONTEXT, do not claim that its information is missing.
+15. Do not use the fallback response merely because the
+    question uses words such as "explain", "describe",
+    "tell me about", "what is in", or "summarize".
+
+IMPORTANT FALLBACK RULE:
+
+Only use the following fallback response when the DOCUMENT
+CONTEXT genuinely contains no information that can answer
+the user's question:
 
 I couldn't find this information in the uploaded documents.
 
@@ -214,8 +233,7 @@ Respond with ONLY the answer to the current user question.
     ):
 
         # --------------------------------
-        # Check whether a specific document
-        # was mentioned
+        # Detect requested document
         # --------------------------------
 
         requested_document = (
@@ -225,7 +243,7 @@ Respond with ONLY the answer to the current user question.
         )
 
         # --------------------------------
-        # Retrieve relevant chunks
+        # Retrieval size
         # --------------------------------
 
         search_k = max(
@@ -233,32 +251,36 @@ Respond with ONLY the answer to the current user question.
             10
         )
 
+        # --------------------------------
+        # Normal hybrid search
+        # --------------------------------
+
         results = self.search_engine.search(
             query=question,
             top_k=search_k
         )
 
         # --------------------------------
-        # Prioritize requested document
+        # If a document was mentioned,
+        # retrieve directly from that document
         # --------------------------------
 
         if requested_document:
 
-            matching_results = [
-                chunk
-                for chunk in results
-                if chunk.get(
-                    "document_name",
-                    ""
-                ).lower() == requested_document
-            ]
+            document_results = (
+                self.search_engine.search_document(
+                    query=question,
+                    document_name=requested_document,
+                    top_k=search_k
+                )
+            )
 
-            if matching_results:
+            if document_results:
 
-                results = matching_results
+                results = document_results
 
         # --------------------------------
-        # If no results were found
+        # No retrieval results
         # --------------------------------
 
         if not results:
@@ -292,7 +314,10 @@ Respond with ONLY the answer to the current user question.
             text = chunk.get(
                 "text",
                 ""
-            )
+            ).strip()
+
+            if not text:
+                continue
 
             context_parts.append(
                 f"""
@@ -305,7 +330,21 @@ CHUNK: {chunk_number}
 
         context = "\n".join(
             context_parts
-        )
+        ).strip()
+
+        # --------------------------------
+        # Safety check
+        # --------------------------------
+
+        if not context:
+
+            return {
+                "answer": (
+                    "I couldn't find this information "
+                    "in the uploaded documents."
+                ),
+                "sources": []
+            }
 
         # --------------------------------
         # Build prompt
@@ -336,7 +375,7 @@ CHUNK: {chunk_number}
             preview = chunk.get(
                 "text",
                 ""
-            )
+            ).strip()
 
             if len(preview) > 500:
 
