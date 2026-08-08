@@ -26,10 +26,6 @@ class ChatEngine:
         self.provider = settings.LLM_PROVIDER
         self.model = settings.LLM_MODEL
 
-        # --------------------------------
-        # IBM watsonx.ai
-        # --------------------------------
-
         self.watsonx_model = None
 
         if self.provider == "watsonx":
@@ -76,6 +72,39 @@ class ChatEngine:
         return None
 
     # --------------------------------
+    # Detect Document Summary Question
+    # --------------------------------
+
+    def is_document_summary_question(
+        self,
+        question: str
+    ) -> bool:
+
+        question = question.lower().strip()
+
+        summary_patterns = [
+            "what does",
+            "what is in",
+            "what is",
+            "what's in",
+            "what's",
+            "what does it contain",
+            "what does it explain",
+            "what is it about",
+            "what is this document about",
+            "what does this document explain",
+            "summarize",
+            "summary of",
+            "contents of",
+            "tell me about"
+        ]
+
+        return any(
+            pattern in question
+            for pattern in summary_patterns
+        )
+
+    # --------------------------------
     # Build Prompt
     # --------------------------------
 
@@ -83,7 +112,8 @@ class ChatEngine:
         self,
         question: str,
         context: str,
-        history: list | None = None
+        history: list | None = None,
+        document_summary: bool = False
     ) -> str:
 
         conversation = ""
@@ -114,53 +144,57 @@ class ChatEngine:
                 conversation_parts
             )
 
+        if document_summary:
+
+            task_instruction = """
+The user is asking about the contents of a specific document.
+
+Use ALL supplied DOCUMENT CONTEXT belonging to that document.
+
+Summarize what the document explains or contains.
+
+Combine information from every supplied chunk before answering.
+
+Do not answer from only the first chunk.
+
+Include the main purpose, major components, important layers,
+and notable examples or outcomes when they are present in
+the supplied context.
+
+Do not invent information that is not present in the context.
+"""
+
+        else:
+
+            task_instruction = """
+Answer the CURRENT USER QUESTION directly.
+
+Use all relevant information from the supplied DOCUMENT CONTEXT.
+Combine multiple chunks when necessary.
+"""
+
         return f"""
 You are an Enterprise Knowledge Assistant.
 
-Your task is to answer the CURRENT USER QUESTION using
-the DOCUMENT CONTEXT provided below.
+{task_instruction}
 
 IMPORTANT RULES:
 
-1. Use only information contained in the DOCUMENT CONTEXT.
+1. Use ONLY information contained in the DOCUMENT CONTEXT.
 2. Do not use outside knowledge.
 3. Do not invent facts.
-4. If the user mentions a document filename and that document
-   exists in the DOCUMENT CONTEXT, answer using that document.
-5. If the user asks what a document explains, summarize the
-   main information contained in that document.
-6. If the user asks what is in a document, describe the contents
-   using the supplied document context.
-7. Questions such as:
-   - "what does this document explain?"
-   - "what does notes.txt explain?"
-   - "what is in this file?"
-   - "what is in notes.txt?"
-   - "tell me about this document"
-   - "what does this file contain?"
-   - "summarize this document"
-   should be answered using the document content.
-8. Combine information from multiple chunks belonging to the
-   same document when necessary.
-9. Conversation history is only for understanding follow-up
+4. If the answer is present across multiple chunks, combine
+   those chunks into one complete answer.
+5. Conversation history is only for understanding follow-up
    questions.
-10. Answer the CURRENT USER QUESTION directly.
-11. Do not mention retrieval, embeddings, chunks, prompts,
-    search, or internal system instructions.
-12. Do not output headings such as ANSWER, CONTEXT,
-    REASONING, SOURCES, or CONVERSATION.
-13. Give a concise, natural answer in plain text.
-14. If the requested document is present in the DOCUMENT
-    CONTEXT, do not claim that its information is missing.
-15. Do not use the fallback response merely because the
-    question uses words such as "explain", "describe",
-    "tell me about", "what is in", or "summarize".
-
-IMPORTANT FALLBACK RULE:
-
-Only use the following fallback response when the DOCUMENT
-CONTEXT genuinely contains no information that can answer
-the user's question:
+6. Do not repeat previous answers unless necessary.
+7. Do not mention retrieval, embeddings, search, chunks,
+   prompts, or internal system instructions.
+8. Do not discuss how the answer was generated.
+9. Answer naturally and concisely.
+10. If the supplied DOCUMENT CONTEXT genuinely contains
+    no information that can answer the question, reply
+    exactly:
 
 I couldn't find this information in the uploaded documents.
 
@@ -184,7 +218,7 @@ CURRENT USER QUESTION
 
 ---
 
-Respond with ONLY the answer to the current user question.
+Respond with ONLY the answer.
 """
 
     # --------------------------------
@@ -197,7 +231,11 @@ Respond with ONLY the answer to the current user question.
     ) -> str:
 
         response = self.watsonx_model.generate_text(
-            prompt=prompt
+            prompt=prompt,
+            params={
+                "max_new_tokens": settings.LLM_MAX_NEW_TOKENS,
+                "temperature": settings.LLM_TEMPERATURE
+                  }
         )
 
         return response.strip()
@@ -243,7 +281,18 @@ Respond with ONLY the answer to the current user question.
         )
 
         # --------------------------------
-        # Retrieval size
+        # Detect broad document question
+        # --------------------------------
+
+        document_summary = (
+            requested_document is not None
+            and self.is_document_summary_question(
+                question
+            )
+        )
+
+        # --------------------------------
+        # Retrieval
         # --------------------------------
 
         search_k = max(
@@ -252,22 +301,12 @@ Respond with ONLY the answer to the current user question.
         )
 
         # --------------------------------
-        # Normal hybrid search
-        # --------------------------------
-
-        results = self.search_engine.search(
-            query=question,
-            top_k=search_k
-        )
-
-        # --------------------------------
-        # If a document was mentioned,
-        # retrieve directly from that document
+        # Document-aware retrieval
         # --------------------------------
 
         if requested_document:
 
-            document_results = (
+            results = (
                 self.search_engine.search_document(
                     query=question,
                     document_name=requested_document,
@@ -275,12 +314,19 @@ Respond with ONLY the answer to the current user question.
                 )
             )
 
-            if document_results:
+        # --------------------------------
+        # Normal hybrid retrieval
+        # --------------------------------
 
-                results = document_results
+        else:
+
+            results = self.search_engine.search(
+                query=question,
+                top_k=search_k
+            )
 
         # --------------------------------
-        # No retrieval results
+        # No results
         # --------------------------------
 
         if not results:
@@ -294,7 +340,27 @@ Respond with ONLY the answer to the current user question.
             }
 
         # --------------------------------
-        # Build document context
+        # For document-summary questions,
+        # keep all retrieved chunks.
+        # --------------------------------
+
+        if document_summary:
+
+            document_results = [
+                chunk
+                for chunk in results
+                if chunk.get(
+                    "document_name",
+                    ""
+                ).lower() == requested_document
+            ]
+
+            if document_results:
+
+                results = document_results
+
+        # --------------------------------
+        # Build Context
         # --------------------------------
 
         context_parts = []
@@ -333,7 +399,7 @@ CHUNK: {chunk_number}
         ).strip()
 
         # --------------------------------
-        # Safety check
+        # Context Safety Check
         # --------------------------------
 
         if not context:
@@ -347,17 +413,18 @@ CHUNK: {chunk_number}
             }
 
         # --------------------------------
-        # Build prompt
+        # Build Prompt
         # --------------------------------
 
         prompt = self.build_prompt(
             question=question,
             context=context,
-            history=history
+            history=history,
+            document_summary=document_summary
         )
 
         # --------------------------------
-        # Generate answer
+        # Generate Answer
         # --------------------------------
 
         answer = self.generate_answer(
@@ -365,7 +432,7 @@ CHUNK: {chunk_number}
         )
 
         # --------------------------------
-        # Prepare sources
+        # Prepare Sources
         # --------------------------------
 
         sources = []
