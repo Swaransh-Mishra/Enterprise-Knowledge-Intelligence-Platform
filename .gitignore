@@ -1,0 +1,31 @@
+# Virtual Environment
+.venv/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Environment Variables
+.env
+
+# Logs
+logs/
+*.log
+
+# Runtime Uploads
+data/uploads/
+
+# Generated Vector Store
+# Uncomment if vector index should not be committed
+# data/vector_store/
+
+# VS Code
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Streamlit
+.streamlit/secrets.toml
