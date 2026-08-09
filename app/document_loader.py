@@ -25,43 +25,147 @@ from pptx import Presentation
 
 class DocumentLoader:
 
-    def load_document(self, file_path: str) -> str:
+    SUPPORTED_EXTENSIONS = {
+        ".pdf",
+        ".docx",
+        ".txt",
+        ".md",
+        ".csv",
+        ".xlsx",
+        ".pptx",
+        ".html",
+        ".json",
+    }
 
-        extension = Path(file_path).suffix.lower()
+    def load_document(
+        self,
+        file_path: str
+    ) -> str:
 
-        loaders = {
-            ".pdf": self._load_pdf,
-            ".docx": self._load_docx,
-            ".txt": self._load_txt,
-            ".md": self._load_txt,
-            ".csv": self._load_csv,
-            ".xlsx": self._load_excel,
-            ".pptx": self._load_pptx,
-            ".html": self._load_html,
-            ".json": self._load_json,
-        }
+        path = Path(file_path)
 
-        if extension not in loaders:
+        extension = path.suffix.lower()
+
+        # --------------------------------
+        # Check file exists
+        # --------------------------------
+
+        if not path.exists():
+
+            raise FileNotFoundError(
+                f"File not found: {file_path}"
+            )
+
+        # --------------------------------
+        # Check supported extension
+        # --------------------------------
+
+        if extension not in self.SUPPORTED_EXTENSIONS:
+
             raise ValueError(
                 f"Unsupported file type: {extension}"
             )
 
-        return loaders[extension](file_path)
+        # --------------------------------
+        # Check file is not empty
+        # --------------------------------
 
-    def _load_pdf(self, file_path):
+        if path.stat().st_size == 0:
+
+            raise ValueError(
+                "The uploaded file is empty."
+            )
+
+        loaders = {
+
+            ".pdf": self._load_pdf,
+
+            ".docx": self._load_docx,
+
+            ".txt": self._load_txt,
+
+            ".md": self._load_txt,
+
+            ".csv": self._load_csv,
+
+            ".xlsx": self._load_excel,
+
+            ".pptx": self._load_pptx,
+
+            ".html": self._load_html,
+
+            ".json": self._load_json,
+        }
+
+        try:
+
+            text = loaders[extension](
+                str(path)
+            )
+
+        except Exception as error:
+
+            raise ValueError(
+                f"Could not read the uploaded "
+                f"{extension} file. "
+                f"The file may be invalid or corrupted."
+            ) from error
+
+        # --------------------------------
+        # Validate extracted text
+        # --------------------------------
+
+        if not isinstance(text, str):
+
+            raise ValueError(
+                "The document loader did not "
+                "return valid text."
+            )
+
+        text = text.strip()
+
+        if not text:
+
+            raise ValueError(
+                "No readable text was found "
+                "in the uploaded document."
+            )
+
+        return text
+
+    # --------------------------------
+    # PDF
+    # --------------------------------
+
+    def _load_pdf(
+        self,
+        file_path: str
+    ):
 
         text = ""
 
         pdf = fitz.open(file_path)
 
-        for page in pdf:
-            text += page.get_text()
+        try:
 
-        pdf.close()
+            for page in pdf:
+
+                text += page.get_text()
+
+        finally:
+
+            pdf.close()
 
         return text
 
-    def _load_docx(self, file_path):
+    # --------------------------------
+    # DOCX
+    # --------------------------------
+
+    def _load_docx(
+        self,
+        file_path: str
+    ):
 
         doc = Document(file_path)
 
@@ -70,7 +174,14 @@ class DocumentLoader:
             for paragraph in doc.paragraphs
         )
 
-    def _load_txt(self, file_path):
+    # --------------------------------
+    # TXT / Markdown
+    # --------------------------------
+
+    def _load_txt(
+        self,
+        file_path: str
+    ):
 
         with open(
             file_path,
@@ -80,21 +191,48 @@ class DocumentLoader:
 
             return file.read()
 
-    def _load_csv(self, file_path):
+    # --------------------------------
+    # CSV
+    # --------------------------------
+
+    def _load_csv(
+        self,
+        file_path: str
+    ):
 
         df = pd.read_csv(file_path)
 
-        return df.to_string(index=False)
+        return df.to_string(
+            index=False
+        )
 
-    def _load_excel(self, file_path):
+    # --------------------------------
+    # Excel
+    # --------------------------------
+
+    def _load_excel(
+        self,
+        file_path: str
+    ):
 
         df = pd.read_excel(file_path)
 
-        return df.to_string(index=False)
+        return df.to_string(
+            index=False
+        )
 
-    def _load_pptx(self, file_path):
+    # --------------------------------
+    # PowerPoint
+    # --------------------------------
 
-        presentation = Presentation(file_path)
+    def _load_pptx(
+        self,
+        file_path: str
+    ):
+
+        presentation = Presentation(
+            file_path
+        )
 
         text = []
 
@@ -103,14 +241,27 @@ class DocumentLoader:
             for shape in slide.shapes:
 
                 if hasattr(shape, "text"):
-                    text.append(shape.text)
+
+                    if shape.text.strip():
+
+                        text.append(
+                            shape.text
+                        )
 
         return "\n".join(text)
 
-    def _load_html(self, file_path):
+    # --------------------------------
+    # HTML
+    # --------------------------------
+
+    def _load_html(
+        self,
+        file_path: str
+    ):
 
         with open(
             file_path,
+            "r",
             encoding="utf-8"
         ) as file:
 
@@ -123,7 +274,14 @@ class DocumentLoader:
             separator="\n"
         )
 
-    def _load_json(self, file_path):
+    # --------------------------------
+    # JSON
+    # --------------------------------
+
+    def _load_json(
+        self,
+        file_path: str
+    ):
 
         with open(
             file_path,

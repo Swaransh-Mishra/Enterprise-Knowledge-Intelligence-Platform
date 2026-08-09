@@ -5,6 +5,8 @@ Combines semantic search and keyword search
 with document-aware retrieval.
 """
 
+import re
+
 import numpy as np
 
 from app.search_engine import SemanticSearch
@@ -61,6 +63,8 @@ class HybridSearch:
         document_name: str,
         top_k: int = 5
     ) -> list:
+
+        self.semantic_search.reload()
 
         documents = (
             self.semantic_search.vector_store.documents
@@ -355,6 +359,15 @@ class HybridSearch:
             results.append(chunk)
 
         # --------------------------------
+        # Entity-Aware Retrieval
+        # --------------------------------
+
+        results = self.apply_entity_filter(
+            query=query,
+            results=results
+        )
+
+        # --------------------------------
         # Sort Results
         # --------------------------------
 
@@ -390,6 +403,168 @@ class HybridSearch:
                 break
 
         return final_results
+
+    # --------------------------------
+    # Extract Query Entities
+    # --------------------------------
+
+    def extract_query_entities(
+        self,
+        query: str
+    ) -> list:
+
+        entities = []
+
+        # --------------------------------
+        # Project names
+        # Example:
+        # Project Phoenix
+        # Project Atlantis
+        # --------------------------------
+
+        project_matches = re.findall(
+            r"\bProject\s+[A-Za-z0-9_-]+",
+            query,
+            flags=re.IGNORECASE
+        )
+
+        for entity in project_matches:
+
+            entity = entity.strip()
+
+            if entity.lower() not in [
+                item.lower()
+                for item in entities
+            ]:
+
+                entities.append(entity)
+
+        # --------------------------------
+        # Two-word proper names
+        # Example:
+        # Neha Gupta
+        # Strategic Layer
+        # --------------------------------
+
+        proper_name_matches = re.findall(
+            r"\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+\b",
+            query
+        )
+
+        for entity in proper_name_matches:
+
+            entity = entity.strip()
+
+            if entity.lower() in [
+                item.lower()
+                for item in entities
+            ]:
+                continue
+
+            entities.append(entity)
+
+        return entities
+
+    # --------------------------------
+    # Apply Entity Filter
+    # --------------------------------
+
+    def apply_entity_filter(
+        self,
+        query: str,
+        results: list
+    ) -> list:
+
+        if not results:
+
+            return results
+
+        entities = self.extract_query_entities(
+            query
+        )
+
+        # --------------------------------
+        # No specific entity
+        # Keep normal hybrid retrieval
+        # --------------------------------
+
+        if not entities:
+
+            return results
+
+        # --------------------------------
+        # Find chunks containing entities
+        # --------------------------------
+
+        entity_results = []
+
+        for result in results:
+
+            text = result.get(
+                "text",
+                ""
+            )
+
+            document_name = result.get(
+                "document_name",
+                ""
+            )
+
+            searchable_text = (
+                f"{document_name} {text}"
+            ).lower()
+
+            matched_entities = 0
+
+            for entity in entities:
+
+                if entity.lower() in searchable_text:
+
+                    matched_entities += 1
+
+            if matched_entities > 0:
+
+                result = result.copy()
+
+                result["entity_match"] = (
+                    matched_entities
+                )
+
+                # --------------------------------
+                # Small ranking boost
+                # --------------------------------
+
+                result["combined_score"] = (
+                    result.get(
+                        "combined_score",
+                        0.0
+                    )
+                    +
+                    0.15 * matched_entities
+                )
+
+                entity_results.append(
+                    result
+                )
+
+        # --------------------------------
+        # If entity was found in results,
+        # use entity-matching results only.
+        # --------------------------------
+
+        if entity_results:
+
+            return entity_results
+
+        # --------------------------------
+        # If no entity was found,
+        # return original retrieval results.
+        #
+        # This prevents the filter from
+        # destroying normal semantic search.
+        # --------------------------------
+
+        return results
 
     # --------------------------------
     # Find Document
