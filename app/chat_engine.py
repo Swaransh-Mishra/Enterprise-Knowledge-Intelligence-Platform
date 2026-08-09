@@ -8,11 +8,10 @@ LLM provider.
 
 import re
 
-from ibm_watsonx_ai import Credentials
-from ibm_watsonx_ai.foundation_models import ModelInference
-
 from app.hybrid_search import HybridSearch
 from app.config.settings import settings
+
+from app.llm import get_llm
 
 
 class ChatEngine:
@@ -27,20 +26,11 @@ class ChatEngine:
         self.provider = settings.LLM_PROVIDER
         self.model = settings.LLM_MODEL
 
-        self.watsonx_model = None
+        # --------------------------------
+        # Initialize LLM Provider
+        # --------------------------------
 
-        if self.provider == "watsonx":
-
-            credentials = Credentials(
-                url=settings.WATSONX_URL,
-                api_key=settings.WATSONX_APIKEY
-            )
-
-            self.watsonx_model = ModelInference(
-                model_id=self.model,
-                credentials=credentials,
-                project_id=settings.WATSONX_PROJECT_ID
-            )
+        self.llm = get_llm()
 
         print(
             f"\nChat engine ready."
@@ -58,7 +48,7 @@ class ChatEngine:
     ):
 
         pattern = (
-            r"\b[\w.-]+\."
+            r"\b[\w\.-]+\."
             r"(pdf|txt|json|csv|xlsx|xls|docx|pptx|md|html|xml)\b"
         )
 
@@ -557,8 +547,7 @@ chunks, prompts, or internal instructions.
 10. Answer naturally and concisely.
 
 11. If the DOCUMENT CONTEXT does not contain
-information that can answer the question, reply
-exactly:
+information that can answer the question, reply exactly:
 
 I couldn't find this information in the uploaded documents.
 
@@ -586,29 +575,6 @@ Respond with ONLY the answer.
 """
 
     # --------------------------------
-    # IBM watsonx Generation
-    # --------------------------------
-
-    def generate_with_watsonx(
-        self,
-        prompt: str
-    ) -> str:
-
-        response = (
-            self.watsonx_model.generate_text(
-                prompt=prompt,
-                params={
-                    "max_new_tokens":
-                        settings.LLM_MAX_NEW_TOKENS,
-                    "temperature":
-                        settings.LLM_TEMPERATURE
-                }
-            )
-        )
-
-        return response.strip()
-
-    # --------------------------------
     # Generate Answer
     # --------------------------------
 
@@ -617,15 +583,8 @@ Respond with ONLY the answer.
         prompt: str
     ) -> str:
 
-        if self.provider == "watsonx":
-
-            return self.generate_with_watsonx(
-                prompt
-            )
-
-        raise ValueError(
-            f"Unsupported LLM provider: "
-            f"{self.provider}"
+        return self.llm.generate(
+            prompt
         )
 
     # --------------------------------
@@ -640,7 +599,7 @@ Respond with ONLY the answer.
     ):
 
         # --------------------------------
-        # Detect Whether This Is a Follow-up
+        # Detect Follow-up
         # --------------------------------
 
         follow_up = (
@@ -671,8 +630,7 @@ Respond with ONLY the answer.
         )
 
         # --------------------------------
-        # Use Recent Document ONLY
-        # for Follow-up Questions
+        # Use Recent Document for Follow-up
         # --------------------------------
 
         if (
