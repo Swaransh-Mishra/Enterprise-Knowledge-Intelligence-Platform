@@ -63,7 +63,7 @@ try:
         with col3:
             st.metric(
                 "🤖 Active LLM",
-                "Llama 3.3 70B"
+                data["llm"]
             )
 
         with col4:

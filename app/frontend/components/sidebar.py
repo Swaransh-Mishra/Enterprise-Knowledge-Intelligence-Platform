@@ -84,7 +84,7 @@ def render_sidebar():
         st.markdown("""
 - ⚡ FastAPI
 - 🎨 Streamlit
-- 🧠 IBM watsonx.ai
+- 🧠 Configurable LLM Layer
 - 📦 FAISS
 - 🔎 Sentence Transformers
 """)

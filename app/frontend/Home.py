@@ -38,9 +38,14 @@ logo_path = (
 )
 
 if logo_path.exists():
-    st.image(str(logo_path), width=220)
+    st.image(
+        str(logo_path),
+        width=220
+    )
 
-st.title("Enterprise Knowledge Intelligence Platform")
+st.title(
+    "Enterprise Knowledge Intelligence Platform"
+)
 
 st.caption(
     "Enterprise Retrieval-Augmented Generation (RAG) platform "
@@ -68,36 +73,44 @@ try:
         col1, col2, col3, col4 = st.columns(4)
 
         with col1:
+
             st.metric(
                 "📄 Documents",
                 data["documents"]
             )
 
         with col2:
+
             st.metric(
                 "🧩 Knowledge Chunks",
                 data["chunks"]
             )
 
         with col3:
+
             st.metric(
                 "🗂 Vector Database",
                 data["vector_database"]
             )
 
         with col4:
+
             st.metric(
                 "🤖 Active LLM",
-                "Llama 3.3 70B"
+                data["llm"]
             )
 
     else:
 
-        st.error("Unable to retrieve platform statistics.")
+        st.error(
+            "Unable to retrieve platform statistics."
+        )
 
 except Exception:
 
-    st.error("Backend connection unavailable.")
+    st.error(
+        "Backend connection unavailable."
+    )
 
 
 st.divider()
@@ -107,7 +120,9 @@ st.divider()
 # Platform Overview
 # -------------------------------------------------------
 
-st.subheader("Platform Capabilities")
+st.subheader(
+    "Platform Capabilities"
+)
 
 col1, col2 = st.columns(2)
 
@@ -149,8 +164,8 @@ with col2:
 Ask questions about uploaded documents.
 
 The system retrieves relevant knowledge and uses
-IBM watsonx.ai to generate grounded responses
-with source attribution.
+the configured LLM provider to generate grounded
+responses with source attribution.
 """
     )
 
@@ -172,24 +187,26 @@ st.divider()
 # RAG Pipeline
 # -------------------------------------------------------
 
-st.subheader("Enterprise RAG Workflow")
+st.subheader(
+    "Enterprise RAG Workflow"
+)
 
 st.code(
     """
 📄 Upload Documents
-        ↓
+↓
 📑 Extract Text
-        ↓
+↓
 🧩 Split into Chunks
-        ↓
+↓
 🧠 Generate Embeddings
-        ↓
+↓
 🗂 Store in FAISS
-        ↓
+↓
 🔍 Hybrid Search
-        ↓
-🤖 IBM watsonx.ai
-        ↓
+↓
+🤖 Configurable LLM
+↓
 💬 Grounded Response
 """,
     language="text"
@@ -203,7 +220,9 @@ st.divider()
 # System Health
 # -------------------------------------------------------
 
-st.subheader("System Health")
+st.subheader(
+    "System Health"
+)
 
 try:
 
@@ -216,15 +235,25 @@ try:
 
         data = response.json()
 
-        st.success("🟢 Enterprise AI Platform is Operational")
+        st.success(
+            "🟢 Enterprise AI Platform is Operational"
+        )
 
         col1, col2 = st.columns(2)
 
         with col1:
 
-            st.write("✅ Backend API Connected")
-            st.write("✅ FAISS Vector Database")
-            st.write("✅ Embedding Model Loaded")
+            st.write(
+                "✅ Backend API Connected"
+            )
+
+            st.write(
+                "✅ FAISS Vector Database"
+            )
+
+            st.write(
+                "✅ Embedding Model Loaded"
+            )
 
         with col2:
 
@@ -242,11 +271,15 @@ try:
 
     else:
 
-        st.warning("Platform health information unavailable.")
+        st.warning(
+            "Platform health information unavailable."
+        )
 
 except Exception:
 
-    st.error("Unable to retrieve platform health.")
+    st.error(
+        "Unable to retrieve platform health."
+    )
 
 
 st.divider()
@@ -259,5 +292,5 @@ st.divider()
 st.caption(
     "Enterprise Knowledge Intelligence Platform • "
     "FastAPI • Streamlit • FAISS • Sentence Transformers • "
-    "IBM watsonx.ai"
+    "Configurable LLM"
 )
